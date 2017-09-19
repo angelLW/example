@@ -1,0 +1,110 @@
+package com.tjresearch.api.core;
+
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+
+import org.springframework.context.ApplicationContext;
+import org.springframework.util.Assert;
+
+
+public class ApiStore {
+	private ApplicationContext applicationContext;
+	private HashMap<String,ApiRunnable> apiMap = new HashMap<String,ApiRunnable>();
+	
+	public ApiStore(ApplicationContext applicationContext){
+		Assert.notNull(applicationContext);
+		this.applicationContext = applicationContext;
+	}
+	public void loadApiFromSpringBeans(){
+		String[] names = applicationContext.getBeanDefinitionNames();
+		Class<?> type;
+		for(String name: names){
+			type = applicationContext.getType(name);
+			for(Method m: type.getDeclaredMethods()){
+				APIMapping apiMapping = m.getAnnotation(APIMapping.class);
+				if(apiMapping != null){
+					addApiItem(apiMapping,name,m);
+				}
+			}
+			
+		}
+	}
+	
+	public ApiRunnable findApiRunnable(String apiName){
+		return apiMap.get(apiName);
+	}
+	
+	private void addApiItem(APIMapping apiMapping,String beanName,Method method){
+		ApiRunnable apiRun = new ApiRunnable();
+		apiRun.apiName = apiMapping.value();
+		apiRun.targetMethod = method;
+		apiRun.targetName = beanName;
+		apiMap.put(apiMapping.value(),apiRun);
+	}
+	
+	public ApiRunnable findApiRunnable(String apiName,String version){
+		return (ApiRunnable)apiMap.get(apiName+"_"+version);
+	}
+	
+	public List<ApiRunnable> findApiRunnables(String apiName){
+		if(apiName == null){
+			throw new IllegalArgumentException("api name must not null");
+		}
+		List<ApiRunnable> list = new ArrayList<ApiRunnable>(20);
+		for(ApiRunnable api : apiMap.values()){
+			if(api.apiName.equals(apiName)){
+				list.add(api);
+			}
+		}
+		return list;
+		
+	}
+
+	public boolean containsApi(String apiName,String version){
+		return apiMap.containsKey(apiName+"_"+version);
+	}
+	
+	
+	public ApplicationContext getApplicationContext(){
+		return applicationContext;
+	}
+	//用于执行对应的api方法
+	public class ApiRunnable {
+
+		public String apiName;//bit.api.user.getUser
+		public String targetName;//loc bean 名称
+		public Method targetMethod;//目标方法getUser
+		Object target;// UserServiceImpl实例
+
+		public Object run(Object... args) throws IllegalAccessException, IllegalArgumentException, InvocationTargetException {
+			if (target == null) {
+				target = applicationContext.getBean(targetName);
+			}
+			return targetMethod.invoke(target, args);
+		}
+
+		public Class<?>[] getParamTypes() {
+			return targetMethod.getParameterTypes();
+		}
+
+		public String getApiName() {
+			return apiName;
+		}
+
+		public String getTargetName() {
+			return targetName;
+		}
+
+		public Object getTarget(){
+			return target;
+		}
+
+		public Method getTargetMethod(){
+			return targetMethod;
+			
+		}
+	}
+}
